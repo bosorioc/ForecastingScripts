@@ -1,0 +1,143 @@
+DROP TABLE #TMP_NivelesPais
+SELECT CASE WHEN a.PAIS = 'CL' THEN 'CH' WHEN a.PAIS = 'RD' THEN 'DO' ELSE A.PAIS END AS CodPais, 
+CAMPANA AS AnioCampana, PAGINA AS NroPagina, NUM_OFERTA AS IdOferta, RIGHT('00000'+CUV,5) AS CUV, SPACE(20) AS CODCUC,
+FORMA_ENTREGA_GRATIS AS Tipo, CONDICION_ENTREGA_GRATIS AS CondicionEntrega, CONVERT(FLOAT,PRECIO_CATALOGO) AS PrecioCatalogo, 
+NUM_INFERIOR AS RangoInferior, NUM_MAYOR AS RangoSuperior, CONVERT(FLOAT,PRECIO_UNITARIO) AS PrecioUnitario, NUM_UNIDADES_GRATIS AS NroUnidadesGratis,
+CONVERT(FLOAT,VALORRIZADO_GRATIS) AS ValorizadoGratis, CUC_GRATIS_GENERICO AS CODCUCGratis, CUV_GRATIS AS CUVGratis, 
+CASE WHEN RIGHT(CAMPANA,2)<=6 THEN CONVERT(VARCHAR(4),LEFT(CAMPANA,4)-1)+' III' 
+WHEN RIGHT(CAMPANA,2) BETWEEN 7 AND 12 THEN LEFT(CAMPANA,4)+' I' 
+ELSE LEFT(CAMPANA,4)+' II' END AS PeriodoTop, 
+0 AS FlagTop, 0 AS FlagTopGratis, 0 AS FlagGratisTercero
+INTO #TMP_NivelesPais
+--FROM matriz_niveles a 
+FROM Matriz_Niveles_Digitacion A
+WHERE PAIS = 'PE'
+
+--SELECT DISTINCT PAIS FROM matriz_niveles
+--PE
+--PA
+--EC
+--CL
+--RD
+--GT
+--CR
+--MX
+--BO
+--PR
+--SV
+
+--CO
+
+DROP TABLE #TMP_CUC
+SELECT A.ANIOCAMPANA, CUV, c.CodCUC INTO #TMP_CUC FROM #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DMATRIZCAMPANA B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CUV = B.CodVenta
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO C ON  B.PKProducto = C.PKProducto
+
+UPDATE #TMP_NivelesPais
+SET CODCUC = B.CodCUC
+FROM #TMP_NivelesPais A INNER JOIN #TMP_CUC B ON A.AnioCampana = B.AnioCampana AND A.CUV = B.CUV
+
+DROP TABLE #TMP_CUCGratis
+SELECT A.ANIOCAMPANA, CUVGratis, c.CodCUC INTO #TMP_CUCGratis FROM #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DMATRIZCAMPANA B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CUVGratis = B.CodVenta
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO C ON  B.PKProducto = C.PKProducto
+
+UPDATE #TMP_NivelesPais
+SET CODCUCGratis = B.CodCUC
+FROM #TMP_NivelesPais A INNER JOIN #TMP_CUCGratis B ON A.AnioCampana = B.AnioCampana AND A.CUVGratis = B.CUVGratis
+
+DECLARE @AnioCampanaIni CHAR(7)
+DECLARE @AnioCampanaFin CHAR(7)
+
+SELECT @AnioCampanaIni = MIN(ANIOCAMPANA) FROM #TMP_NivelesPais
+SELECT @AnioCampanaFin = MAX(ANIOCAMPANA) FROM #TMP_NivelesPais
+
+DROP TABLE #TMP_ProductosTop
+SELECT Periodo, DesMarca, DesCategoria, CodCUC, SUM(RealUUVendidas) AS RealUUVendidas, 
+RANK() OVER (PARTITION BY Periodo, DesMarca, DesCategoria ORDER BY SUM(RealUUVendidas) DESC) AS Ranking
+INTO #TMP_ProductosTop
+FROM BDDM02.DATAMARTCOMPERU.DBO.FVTAPROEBECAMC01 A INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.PKPRODUCTO = B.PKPRODUCTO
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DTIEMPOCAMPANA C ON A.AnioCampana = C.AnioCampana
+WHERE A.AnioCampana = A.AnioCampanaRef AND A.AnioCampana BETWEEN dbo.CalculaAnioCampana(@AnioCampanaIni, -7) AND @AnioCampanaFin
+AND DesCategoria IN ('FRAGANCIAS', 'MAQUILLAJE', 'CUIDADO PERSONAL', 'TRATAMIENTO CORPORAL', 'TRATAMIENTO FACIAL')
+GROUP BY Periodo, DesMarca, DesCategoria, CodCUC
+ORDER BY  Periodo, DesMarca, DesCategoria, SUM(RealVtaMNNeto) DESC
+
+DELETE FROM #TMP_ProductosTop WHERE Ranking > 10
+
+UPDATE #TMP_NivelesPais
+SET FlagTop = 1 
+FROM #TMP_NivelesPais A INNER JOIN #TMP_ProductosTop B ON A.CodCUC = B.CodCUC AND A.PeriodoTop = B.Periodo
+
+UPDATE #TMP_NivelesPais
+SET FlagTopGratis = 1 
+FROM #TMP_NivelesPais A INNER JOIN #TMP_ProductosTop B ON A.CodCUCGratis = B.CodCUC AND A.PeriodoTop = B.Periodo
+
+DROP TABLE #PrecioCatalogo
+SELECT A.AnioCampana, A.CODCUC, MAX(PrecioOferta) AS PrecioOferta INTO #PrecioCatalogo from #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.CODCUC = B.CodCUC
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DMATRIZCAMPANA C ON A.AnioCampana = C.AnioCampana AND B.PKProducto = C.PKProducto
+WHERE ISNULL(preciocatalogo,0)= 0 AND DESCATALOGO LIKE '%CATALOGO%'
+GROUP BY A.AnioCampana, A.CODCUC
+
+UPDATE #TMP_NivelesPais
+SET PrecioCatalogo = CONVERT(FLOAT, B.PrecioOferta)
+FROM #TMP_NivelesPais A INNER JOIN #PrecioCatalogo B ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC
+WHERE ISNULL(preciocatalogo,0)= 0
+
+DROP TABLE #PrecioNormal
+SELECT A.AnioCampana, A.CODCUC, MAX(C.PrecioNormalMN) AS PrecioNormal INTO #PrecioNormal FROM #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.CODCUC = B.CodCUC
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.FVTAPROCAMMES C ON A.ANIOCAMPANA = C.ANIOCAMPANA AND B.PKPRODUCTO = C.PKPRODUCTO
+WHERE ISNULL(preciocatalogo,0)= 0
+GROUP BY A.AnioCampana, A.CODCUC
+
+UPDATE #TMP_NivelesPais
+SET PrecioCatalogo = CONVERT(FLOAT, B.PrecioNormal)
+FROM #TMP_NivelesPais A INNER JOIN #PrecioNormal B ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC
+WHERE ISNULL(preciocatalogo,0)= 0
+
+DROP TABLE #PrecioCatalogoGratis
+SELECT A.AnioCampana, A.CODCUCGratis, MAX(PrecioOferta) AS PrecioOferta INTO #PrecioCatalogoGratis from #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.CODCUCGratis = B.CodCUC
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DMATRIZCAMPANA C ON A.AnioCampana = C.AnioCampana AND B.PKProducto = C.PKProducto
+WHERE ISNULL(ValorizadoGratis,0)= 0 AND ISNULL(CODCUCGratis,'') <>'' AND DESCATALOGO LIKE '%CATALOGO%' 
+GROUP BY A.AnioCampana, A.CODCUCGratis
+
+UPDATE #TMP_NivelesPais
+SET ValorizadoGratis = CONVERT(FLOAT, B.PrecioOferta)
+FROM #TMP_NivelesPais A INNER JOIN #PrecioCatalogoGratis B ON A.AnioCampana = B.AnioCampana AND A.CODCUCGratis = B.CODCUCGratis
+WHERE ISNULL(ValorizadoGratis,0)= 0 AND ISNULL(A.CODCUCGratis,'') <>''
+
+DROP TABLE #PrecioNormalGratis
+SELECT A.AnioCampana, A.CODCUCGratis, MAX(C.PrecioNormalMN) AS PrecioNormal INTO #PrecioNormalGratis FROM #TMP_NivelesPais A 
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.CODCUCGratis = B.CodCUC
+INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.FVTAPROCAMMES C ON A.ANIOCAMPANA = C.ANIOCAMPANA AND B.PKPRODUCTO = C.PKPRODUCTO
+WHERE ISNULL(ValorizadoGratis,0)= 0 AND ISNULL(CODCUCGratis,'') <>''
+GROUP BY A.AnioCampana, A.CODCUCGratis
+
+UPDATE #TMP_NivelesPais
+SET ValorizadoGratis = CONVERT(FLOAT, B.PrecioNormal)*0.7
+FROM #TMP_NivelesPais A INNER JOIN #PrecioNormalGratis B ON A.AnioCampana = B.AnioCampana AND A.CODCUCGratis = B.CODCUCGratis
+WHERE ISNULL(ValorizadoGratis,0)= 0 AND ISNULL(A.CODCUCGratis,'') <>''
+
+UPDATE #TMP_NivelesPais
+SET FlagGratisTercero = 1
+FROM #TMP_NivelesPais A INNER JOIN BDDM02.DATAMARTCOMPERU.DBO.DPRODUCTO B ON A.CODCUCGratis = B.CodCUC 
+WHERE DesUnidadNegocio <> 'COSMETICOS'
+
+--DELETE FROM DBO.ForDigitacionNiveles WHERE CodPais = 'CO' 
+--INSERT INTO ForDigitacionNiveles
+--SELECT * FROM #TMP_NivelesPais
+
+/*para validación*/
+SELECT * FROM #TMP_NivelesPais
+WHERE PrecioUnitario = 0 
+
+SELECT * FROM #TMP_NivelesPais
+WHERE PrecioCatalogo = 0 
+
+
+--SELECT * FROM #TMP_NivelesPais 15432
+
+--SELECT COUNT(*) FROM ForDigitacionNiveles WHERE CodPais = 'CO' 
