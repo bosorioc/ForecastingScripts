@@ -29,11 +29,11 @@ CREATE INDEX idx_DApoyoProducto ON #DAPOYOPRODUCTO (AnioCampana,PKProducto, CodV
 (
 	select A.ANIOCAMPANA, D.CodSAP, D.CodCUC,D.CodTipoOferta, D.CodSAPApoyador,CodCUCApoyador,   
 	CASE WHEN D.CodTipoOferta IN ('004', '005', '006', '007', '008', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019',
-	'031', '034', '036', '039', '041', '042', '043', '053', '106', '111', '117', '124') THEN A.RealUUVendidas + A.RealUUFaltantes 
+	'036', '043', '106', '117') THEN A.RealUUVendidas + A.RealUUFaltantes 
 	ELSE 0 END AS RealUUDemandadasCat,
 	-- '033', '040', '044', '114', '116', 
-	CASE WHEN D.CodTipoOferta IN ('001', '003', '024', '025', '029', '032', '035', '037', '038', '046', '047', '048', '049',
-	'050', '051', '052', '060', '064', '107', '108', '112', '113', '115', '118', '123') THEN A.RealUUVendidas + A.RealUUFaltantes  ELSE 0 END AS RealUUDemandadasRev
+	CASE WHEN D.CodTipoOferta IN ('001', '003', '025', '029', '035', '046', '048', '049',
+	'060', '064', '107', '108', '112', '115', '118', '123') THEN A.RealUUVendidas + A.RealUUFaltantes  ELSE 0 END AS RealUUDemandadasRev
 	from FVTAPROCAMMES a
 	INNER JOIN DTIPOOFERTA C ON C.PKTipoOferta = A.PKTipoOferta
 	INNER JOIN #DAPOYOPRODUCTO D ON A.PKProducto = D.PKProducto AND 
@@ -57,10 +57,10 @@ from #BASE_PROMOCIONES a inner join TOTAL_UNIDADES_APOYADAS b on a.aniocampana =
 --DROP TABLE #TMP_PRECIOS_APOYADAS
 select A.ANIOCAMPANA, D.CodSAP, D.CodCUC,D.CodTipoOferta, D.CodSAPApoyador,CodCUCApoyador,
 CASE WHEN D.CodTipoOferta IN ('004', '005', '006', '007', '008', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019',
-'031', '034', '036', '039', '041', '042', '043', '053', '106', '111', '117', '124') THEN A.PrecioOferta 
+	'036', '043', '106', '117') THEN A.PrecioOferta 
 ELSE 0 END AS PrecioOfertaCat,
-CASE WHEN D.CodTipoOferta IN ('001', '003', '024', '025', '029', '032', '035', '037', '038', '046', '047', '048', '049',
-'050', '051', '052', '060', '064', '107', '108', '112', '113', '115', '118', '123') THEN A.PrecioOferta  ELSE 0 END AS PrecioOfertaRev
+CASE WHEN D.CodTipoOferta IN ('001', '003', '025', '029', '035', '046', '048', '049',
+	'060', '064', '107', '108', '112', '115', '118', '123') THEN A.PrecioOferta  ELSE 0 END AS PrecioOfertaRev
 INTO #TMP_PRECIOS_APOYADAS
 from DMATRIZCAMPANA a
 INNER JOIN DPRODUCTO B ON A.PKPRODUCTO = B.PKPRODUCTO
