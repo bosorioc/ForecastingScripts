@@ -13,16 +13,16 @@ SET @DesCategoria =
 ----'TRATAMIENTO CORPORAL'
 --'MAQUILLAJE'
 
-SET @AnioCampanaIni = '201712'
-SET @AnioCampanaFin = '201713'
-SET @AnioCampanaIniFuturo = '201714'
-SET @AnioCampanaFinFuturo = '201715'
-SET @FlagTest = 1
+SET @AnioCampanaIni = '201401'
+SET @AnioCampanaFin = '201714'
+SET @AnioCampanaIniFuturo = '201715'
+SET @AnioCampanaFinFuturo = '201806'
 
+/*Los códigos de país de SICC de El Salvador y Guatemala no tienen un formato bonito*/
 SELECT @CodPais = CASE WHEN CodPais = 'S2' THEN 'SV' WHEN CodPais = 'G2' THEN 'GT' ELSE CodPais END
 FROM DPais
 
-/*Solo productos que han facturado en la forma de venta cosm�ticos y algunos tipos de oferta*/
+/*Campañas cerradas: Solo productos que han facturado en la forma de venta catálogo, productos cosméticos y algunos tipos de oferta*/
 --DROP TABLE #BASE
 SELECT A.AnioCampana, B.CodCUC, A.PKProducto, B.DesMarca, B.CodCategoria, B.DesCategoria, CodTipoOferta, A.PKTipoOferta, 0 AS FlagNoConsiderar,
 CASE WHEN CodTipoOferta IN ('007','008','010','011','012','013','014','015','017','018','019','033','036','039','043','044','106','114','116') THEN 1 
@@ -35,14 +35,14 @@ INNER JOIN DPRODUCTO B ON A.PKPRODUCTO = B.PKPRODUCTO
 INNER JOIN DTIPOOFERTA C ON A.PKTipoOferta = C.PKTipoOferta
 WHERE A.ANIOCAMPANA BETWEEN @AnioCampanaIni AND @AnioCampanaFin
 AND A.ANIOCAMPANA = A.ANIOCAMPANAREF
-AND C.CodTipoProfit = '01'
+AND C.CodTipoProfit = '01' --Forma de Venta Catálogo
 AND DesUnidadNegocio IN ('COSMETICOS')
 AND DESCATEGORIA = @DesCategoria
 AND CodTipoOferta IN ('003','007','008','009','010','011','012','013','014','015','017','018','019','029','033',
 '035','036','038','039','043','044','047','048','049','060','064','106','108','114','115','116','123')
 GROUP BY A.ANIOCAMPANA, B.CODCUC, A.PKProducto, B.DesMarca, B.CodCategoria, B.DesCategoria, CodTipoOferta, A.PKTipoOferta
 
-/*Campa�as abiertas - Inicio*/ 
+/*Campañas abiertas: todas las tácticas que han sido ingresadas en Planit y el sistema comercial*/ 
 INSERT INTO #BASE
 SELECT AnioCampana, CodCUC, A.PKProducto, DesMarca, CodCategoria, DesCategoria, CodTipoOferta, A.PkTipoOferta, 0 AS FlagNoConsiderar,
 CASE WHEN CodTipoOferta IN ('007','008','010','011','012','013','014','015','017','018','019','033','036','039','043','044','106','114','116') THEN 1 
@@ -51,17 +51,17 @@ CASE WHEN CodTipoOferta IN ('003','009','029','035','038','047','048','049','060
 0 AS RealUUVendidas, 0 AS RealUUFaltantes, 0 AS FlagReal, CONVERT(FLOAT, 0) AS PrecioNormalMN
 FROM DMATRIZCAMPANA A INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
 INNER JOIN DTIPOOFERTA C ON A.PKTipoOferta = C.PKTipoOferta
-WHERE ANIOCAMPANA BETWEEN @AnioCampanaIniFuturo AND @AnioCampanaFinFuturo AND CodTipoProfit = '01'
+WHERE ANIOCAMPANA BETWEEN @AnioCampanaIniFuturo AND @AnioCampanaFinFuturo 
+AND CodTipoProfit = '01'
 AND CodTipoOferta IN ('003','007','008','009','010','011','012','013','014','015','017','018','019','029','033',
 '035','036','038','039','043','044','047','048','049','060','064','106','108','114','115','116','123')
 AND DESCATEGORIA = @DesCategoria
-/*Campa�as abiertas - Fin*/
 
 --Precio Normal
 --Considerar solo los productos CUC que tienen estimados
 SELECT A.AnioCampana, CodCUC, SUM(EstUUVendidas) AS NroEstimados,max(PrecioOfertaDol) as PrecioOfertaDol,  MAX(Case when @codpais = 'BO' then PrecioNormalDol else PrecioNormalMN end) AS PRECIONORMALMN  
 INTO #TMP_Estimados
-FROM FVTAPROCAMMES A  INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
+FROM FVTAPROCAMMES A INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
 WHERE A.AnioCampana = A.AnioCampanaRef
 AND AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFinFuturo
 AND DESCATEGORIA = @DesCategoria
@@ -77,6 +77,7 @@ AND AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFinFuturo
 AND DESCATEGORIA = @DesCategoria
 GROUP BY A.AnioCampana, CodCUC,PKTipoOferta
 
+/*Si un  CUC no tiene unidades estimadas se debe eliminar*/
 UPDATE #BASE
 SET FlagNoConsiderar = 1
 FROM #BASE A INNER JOIN #TMP_estimados B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
@@ -84,28 +85,38 @@ WHERE NroEstimados = 0
 
 DELETE FROM #BASE WHERE FlagNoConsiderar = 1
 
+/*Se actualiza el precio normal de cada CUC*/
 UPDATE #BASE
 SET PrecioNormalMN = B.PRECIONORMALMN
 FROM #BASE A INNER JOIN #TMP_Estimados B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
 
---Matriz de facturaci�n 
---Variables de argumentaci�n y Precio Oferta
---DROP TABLE #TMP_DMATRIZCAMPANA
+/*De la matriz de facturación se traen las variables de argumentación y el precio Oferta 
+Se debe tomar en cuenta lo siguiente para campañas cerradas:
+Forma de Venta: Catálogo
+La táctica debe tener registrada la ubicación.
+La táctica debe estar diagramada solo en la revista o en los catálogos
+El código de Venta debe ser diferente a 00000, este es un código dummy de tácticas que llegan a Sicc desde Planit, pero que no se llegan a activar
+El precio de oferta del producto debe ser mayor a 0
+*/
 SELECT AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, DesUbicacionCatalogo, DesLadoPag, DesTipoCatalogo,
 ISNULL(CONVERT(FLOAT,RIGHT(RTRIM(REPLACE(REPLACE(DesExposicion,'SIN EXPOSICION',''), '%', '')), 4)),0)/100 * NroPaginas  AS Exposicion, 
 NroPaginas, MAX(FotoProducto) AS FotoProducto, MAX(FotoModelo) AS FotoModelo, MAX(FlagDiscover) AS FlagDiscover, PaginaCatalogo,
-MIN(PrecioOferta) AS PrecioOferta, 1 AS Registros, 1 as Eliminar  into #TMP_DMATRIZCAMPANA
+CONVERT(FLOAT, 0) AS PrecioOferta, 1 AS Registros, 1 as Eliminar  into #TMP_DMATRIZCAMPANA
 FROM DMATRIZCAMPANA A INNER JOIN DTIPOOFERTA B ON A.PKTIPOOFERTA = B.PKTIPOOFERTA
 INNER JOIN DPRODUCTO C ON A.PKPRODUCTO = C.PKPRODUCTO
 WHERE AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFin
 AND CODTIPOPROFIT = '01'
-AND DesUbicacionCatalogo IS NOT NULL AND CODVENTA <> '00000'
+AND DesUbicacionCatalogo IS NOT NULL 
+AND CODVENTA <> '00000'
 AND DesTipoCatalogo IN ('REVISTA BELCORP', 'CATALOGO CYZONE', 'CATALOGO EBEL/LBEL', 'CATALOGO ESIKA')
-AND PrecioOferta>0 
+--AND PrecioOferta > 0 
 GROUP BY AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, DesUbicacionCatalogo, DesLadoPag, DesTipoCatalogo, DesExposicion, 
-NroPaginas, --FotoProducto, FotoModelo, FlagDiscover, 
-PaginaCatalogo
+NroPaginas, PaginaCatalogo
 UNION
+/*Campañas abiertas:
+Forma de Venta: Catálogo
+La táctica debe estar diagramada solo en la revista o en los catálogos
+*/
 SELECT AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, DesUbicacionCatalogo, DesLadoPag, DesTipoCatalogo,
 ISNULL(CONVERT(FLOAT,RIGHT(RTRIM(REPLACE(REPLACE(DesExposicion,'SIN EXPOSICION',''), '%', '')), 4)),0)/100 * NroPaginas AS Exposicion, 
 NroPaginas, MAX(FotoProducto) AS FotoProducto, MAX(FotoModelo) AS FotoModelo, MAX(FlagDiscover) AS FlagDiscover, PaginaCatalogo,
@@ -115,22 +126,39 @@ INNER JOIN DPRODUCTO C ON A.PKPRODUCTO = C.PKPRODUCTO
 WHERE AnioCampana BETWEEN @AnioCampanaIniFuturo AND @AnioCampanaFinFuturo
 AND CODTIPOPROFIT = '01'
 AND DesTipoCatalogo IN ('REVISTA BELCORP', 'CATALOGO CYZONE', 'CATALOGO EBEL/LBEL', 'CATALOGO ESIKA')
---AND DesUbicacionCatalogo IS NOT NULL AND CODVENTA <> '00000'
 GROUP BY AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, DesUbicacionCatalogo, DesLadoPag, DesTipoCatalogo, DesExposicion, 
-NroPaginas, --FotoProducto, FotoModelo, FlagDiscover, 
-PaginaCatalogo
+NroPaginas, PaginaCatalogo
 
+/*Se actualiza el precio de Oferta*/
+SELECT AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, MIN(PrecioOferta) AS PrecioOferta 
+INTO #TMP_PRECIOOFERTA
+FROM DMATRIZCAMPANA A INNER JOIN DTIPOOFERTA B ON A.PKTIPOOFERTA = B.PKTIPOOFERTA
+INNER JOIN DPRODUCTO C ON A.PKPRODUCTO = C.PKPRODUCTO
+WHERE AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFin
+AND CODTIPOPROFIT = '01'
+AND CODVENTA <> '00000'
+AND DesTipoCatalogo IN ('REVISTA BELCORP', 'CATALOGO CYZONE', 'CATALOGO EBEL/LBEL', 'CATALOGO ESIKA')
+AND PrecioOferta > 0 
+GROUP BY AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta
+
+UPDATE #TMP_DMATRIZCAMPANA
+SET PrecioOferta = B.PrecioOferta
+FROM #TMP_DMATRIZCAMPANA A INNER JOIN #TMP_PRECIOOFERTA B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CodCUC = B.CodCUC AND A.CodTipoOferta = B.CodTipoOferta
+
+DELETE #TMP_DMATRIZCAMPANA WHERE PrecioOferta = 0 
+
+/*Se eliminan las tácticas de la revista que están ubicadas en la página 0 o ubicadas en una página mayor a 100, porque normalmente son reacciones*/
 DELETE FROM #TMP_DMATRIZCAMPANA
 WHERE DesTipoCatalogo IN ('REVISTA BELCORP') AND (ISNULL(PaginaCatalogo,0) = 0 OR  ISNULL(PaginaCatalogo,0)>=100)
 
+/*Agrupamos por producto - tipo de oferta*/
 SELECT AnioCampana, CodCUC, PKTipoOferta, MIN(PrecioOferta) AS PrecioOferta, 
 SUM(ISNULL(Exposicion,0)) AS Exposicion, SUM(ISNULL(NroPaginas,0)) AS NroPaginas 
 INTO #TMP_DMATRIZCAMPANA1
 FROM #TMP_DMATRIZCAMPANA
 GROUP BY AnioCampana, CodCUC, PKTipoOferta  
 
--- Agregar la exposicion a la demanda (UNION por CUC para evitar Exposiciones 0)
---DROP TABLE #BASE_1
+/*Agrupamos por CUC - Tipo de Oferta para totalizar las unidades vendidas y las unidades faltantes*/
 SELECT ANIOCAMPANA, CODCUC, DesMarca, CodCategoria, DesCategoria, CodTipoOferta, PKTipoOferta, FlagCatalogo, FlagRevista, 
 SUM(RealUUVendidas) as RealUUVendidas, SUM(RealUUFaltantes)RealUUFaltantes, FlagReal, CONVERT(FLOAT,0) AS PrecioOferta, 
 CONVERT(FLOAT,0) AS Exposicion, AVG(PrecioNormalMN) AS PrecioNormalMN, 0 AS NroPaginas, CONVERT(FLOAT,0) AS Descuento, 0 AS NroPaginasOriginal, 
@@ -139,6 +167,7 @@ INTO #BASE_1
 FROM #BASE 
 GROUP BY ANIOCAMPANA, CODCUC, DesMarca, CodCategoria, DesCategoria, CodTipoOferta, PKTipoOferta, FlagCatalogo, FlagRevista, FlagReal
 
+/*Por cada CUC - TO se le asigna el precio de oferta, exposición total, número de páginas y descuento*/
 UPDATE	#BASE_1
 SET	PrecioOferta = B.PrecioOferta,
 	Exposicion = B.Exposicion,
@@ -157,10 +186,11 @@ ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC AND A.PKTipoOferta = B.
 WHERE @codpais = 'BO'
 
 /*Si no fue diagramado no lo considero*/
+/*Si el CUC-TO no fue diagramado lo elimino, es una reacción*/
 DELETE FROM #BASE_1 WHERE FlagDiagramado = 0
 
---Sets y Apoyados
---Si lo apoyan menos de 10 productos no se considera el precio
+/*Apoyados
+Si lo apoyan menos de 10 productos no se considera el precio */
 SELECT AnioCampana, B.CodCUC, D.CodTipoOferta, COUNT(DISTINCT C.CodCUC) AS NroApoyados
 INTO #Apoyados
 FROM DAPOYOPRODUCTO A INNER JOIN DPRODUCTO B ON A.PKProductoApoyador = B.PKProducto
@@ -170,7 +200,7 @@ WHERE AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFinFuturo
 GROUP BY AnioCampana, B.CodCUC, D.CodTipoOferta
 HAVING COUNT(DISTINCT C.CodCUC) < 10 
 
---Si el precio del producto en un TO de set y/0 apoyados es el m�nimo entonces considero el promedio con los otros TOs
+--Si el precio del producto en un TO de set y/0 apoyados es el mínimo entonces considero el promedio con los otros TOs
 SELECT AnioCampana, CodCUC, CodTipoOferta, PrecioOferta INTO #TMP_PrecioSets FROM #BASE_1
 WHERE CodTipoOferta IN ('008', '035', '036', '060', '049', '012', '038', '039') AND PrecioOferta > 0
 
@@ -212,8 +242,7 @@ SET PrecioOferta = B.PrecioOfertaSet,
 FROM #BASE_1 A 
 INNER JOIN #TMP_MIN B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC AND A.PrecioOferta = B.PrecioOfertaMIN
 
---Si es que el producto no fue diagramado, entonces le coloco los m�nimo para no alterar los promedios
-
+--Si es que el producto no fue diagramado, entonces le coloco los mínimo para no alterar los promedios
 --DROP TABLE #SinExposicion
 SELECT DISTINCT AnioCampana, CodCUC INTO #SinExposicion FROM #BASE_1 WHERE Exposicion = 0
 
@@ -242,17 +271,6 @@ SET PrecioOferta = B.PrecioOferta,
 FROM #BASE_1 A INNER JOIN #PrecioOfertaMinimo B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
 WHERE A.PrecioOferta = 0
 
-IF @FlagTest = 0  
-BEGIN
-SELECT CODCUC INTO #Historia FROM #BASE_1
-WHERE ANIOCAMPANA <= '201612' AND FlagReal = 1
-GROUP BY CodCUC
-HAVING COUNT(DISTINCT AnioCampana) < 10
-
-DELETE FROM #BASE_1 WHERE CodCUC IN (SELECT CodCUC FROM #Historia) AND ANIOCAMPANA <= '201612' 
- 
-END
-
 SELECT @CodPais AS CodPais,
 A.AnioCampana, 
 A.DesMarca, 
@@ -272,8 +290,8 @@ POWER(MAX(PrecioOferta),2) AS PrecioOfertaMaxAlCuadrado,
 CASE WHEN MAX(PrecioOferta) = 0 THEN 0 ELSE 1/MAX(PrecioOferta) END AS PrecioOfertaMaxInverso,
 AVG(PrecioNormalMN) AS PrecioNormalMN, 
 COUNT(DISTINCT PkTipoOferta) AS NroTipoOfertas,
-SUM(FlagRevista) AS NroTipoOfertasCatalogo,
-SUM(FlagCatalogo) AS NroTipoOfertasRevista,
+SUM(FlagCatalogo) AS NroTipoOfertasCatalogo,
+SUM(FlagRevista) AS NroTipoOfertasRevista,
 SUM(RealUUVendidas + RealUUFaltantes) AS RealUUDemandadas, 
 CONVERT(FLOAT,SUM(RealUUVendidas + RealUUFaltantes)) /CONVERT(FLOAT,B.RealNroPedidos) AS PUP, 
 MIN(Exposicion) AS ExposicionMin,
@@ -319,7 +337,7 @@ CASE WHEN RIGHT(A.AnioCampana,2) = '02' THEN 1 ELSE 0 END AS FlagC02,
 0 AS TO_015_Especiales,
 0 AS TO_017_Especiales,
 0 AS TO_018_Especiales,
-0 AS TO_019_RestoL�nea,
+0 AS TO_019_RestoLínea,
 0 AS TO_029_OfertaConsultora,
 0 AS TO_033_PromocionPropia,
 0 AS TO_035_FechasEspeciales,
@@ -448,7 +466,7 @@ FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana
 WHERE B.CodTipoOferta IN ('018')
 
 UPDATE #BASE_3
-SET TO_019_RestoL�nea = 1
+SET TO_019_RestoLínea = 1
 FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
 WHERE B.CodTipoOferta IN ('019')
 
@@ -510,8 +528,8 @@ WHERE B.CodTipoOferta IN ('123')
 UPDATE #BASE_3
 SET FlagTacticaMacro = 1
 FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
-WHERE B.CodTipoOferta IN ('001', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '015', 
-'025', '029', '033', '035', '044', '048', '049', '060', '064', '106', '108', '114', '115', '116', '117', '123') 
+WHERE B.CodTipoOferta IN ('001', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '025',
+ '029', '033', '035', '044', '048', '049', '060', '064', '106', '108', '114', '115', '116', '117', '123') 
 
 UPDATE #BASE_3
 SET FlagTacticaDetallada = 1
@@ -556,17 +574,6 @@ INTO #TMP_CAMPANACUC1 FROM #TMP_CAMPANACUC
 UPDATE #BASE_3
 SET N_Records_SKU = B.N_Records_SKU
 FROM #BASE_3 A INNER JOIN #TMP_CAMPANACUC1 B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
+/*Versión original - Fin*/
 
---DELETE FROM #BASE_3
---WHERE CodCUC  NOT IN (
---	SELECT A.CodCUC FROM #BASE_3 A INNER JOIN #BASE_3 B ON A.CodCUC = B.CodCUC 
---	WHERE A.Development = 1 AND B.Development = 0
---	GROUP BY A.CodCUC
---)
-
-/*Versi�n original - Fin*/
-
-
---DELETE FROM BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting WHERE CODPAIS = @CodPais AND DesCategoria = @DesCategoria
 --INSERT INTO BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting
-SELECT * FROM #BASE_3
