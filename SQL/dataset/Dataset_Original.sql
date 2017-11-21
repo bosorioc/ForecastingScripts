@@ -7,16 +7,16 @@ DECLARE @FlagTest INT
 DECLARE @DesCategoria VARCHAR(20)
 
 SET @DesCategoria = 
---'CUIDADO PERSONAL'
+'CUIDADO PERSONAL'
 ----'TRATAMIENTO FACIAL'
 ----'FRAGANCIAS'
 ----'TRATAMIENTO CORPORAL'
 --'MAQUILLAJE'
 
-SET @AnioCampanaIni = '201401'
+SET @AnioCampanaIni = '201712'
 SET @AnioCampanaFin = '201713'
 SET @AnioCampanaIniFuturo = '201714'
-SET @AnioCampanaFinFuturo = '201718'
+SET @AnioCampanaFinFuturo = '201715'
 SET @FlagTest = 1
 
 SELECT @CodPais = CASE WHEN CodPais = 'S2' THEN 'SV' WHEN CodPais = 'G2' THEN 'GT' ELSE CodPais END
@@ -59,13 +59,23 @@ AND DESCATEGORIA = @DesCategoria
 
 --Precio Normal
 --Considerar solo los productos CUC que tienen estimados
-SELECT A.AnioCampana, CodCUC, SUM(EstUUVendidas) AS NroEstimados,  MAX(PRECIONORMALMN) AS PRECIONORMALMN  
+SELECT A.AnioCampana, CodCUC, SUM(EstUUVendidas) AS NroEstimados,max(PrecioOfertaDol) as PrecioOfertaDol,  MAX(Case when @codpais = 'BO' then PrecioNormalDol else PrecioNormalMN end) AS PRECIONORMALMN  
 INTO #TMP_Estimados
 FROM FVTAPROCAMMES A  INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
 WHERE A.AnioCampana = A.AnioCampanaRef
 AND AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFinFuturo
 AND DESCATEGORIA = @DesCategoria
 GROUP BY A.AnioCampana, CodCUC
+
+--Precio Oferta Dolares
+--Considerar solo los productos CUC que tienen estimados
+SELECT A.AnioCampana, CodCUC,PKTipoOferta,max(PrecioOfertaDol) as PrecioOfertaDol  
+INTO #TMP_DOLAR
+FROM FVTAPROCAMMES A  INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
+WHERE A.AnioCampana = A.AnioCampanaRef
+AND AnioCampana BETWEEN @AnioCampanaIni AND @AnioCampanaFinFuturo
+AND DESCATEGORIA = @DesCategoria
+GROUP BY A.AnioCampana, CodCUC,PKTipoOferta
 
 UPDATE #BASE
 SET FlagNoConsiderar = 1
@@ -139,6 +149,12 @@ SET	PrecioOferta = B.PrecioOferta,
 	FlagDiagramado = 1
 FROM #BASE_1 A INNER JOIN #TMP_DMATRIZCAMPANA1 B 
 ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC AND A.PKTipoOferta = B.PKTipoOferta 
+
+UPDATE #BASE_1
+SET PrecioOferta = B.PrecioOfertaDol
+FROM #BASE_1 A INNER JOIN #TMP_DOLAR B
+ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC AND A.PKTipoOferta = B.PKTipoOferta 
+WHERE @codpais = 'BO'
 
 /*Si no fue diagramado no lo considero*/
 DELETE FROM #BASE_1 WHERE FlagDiagramado = 0
@@ -551,6 +567,6 @@ FROM #BASE_3 A INNER JOIN #TMP_CAMPANACUC1 B ON A.AnioCampana = B.AnioCampana AN
 /*Versión original - Fin*/
 
 
-DELETE FROM BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting WHERE CODPAIS = @CodPais AND DesCategoria = @DesCategoria
-INSERT INTO BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting
+--DELETE FROM BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting WHERE CODPAIS = @CodPais AND DesCategoria = @DesCategoria
+--INSERT INTO BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting
 SELECT * FROM #BASE_3
