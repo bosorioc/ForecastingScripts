@@ -319,7 +319,7 @@ CASE WHEN RIGHT(A.AnioCampana,2) = '02' THEN 1 ELSE 0 END AS FlagC02,
 0 AS TO_015_Especiales,
 0 AS TO_017_Especiales,
 0 AS TO_018_Especiales,
-0 AS TO_019_RestoLínea,
+0 AS TO_019_RestoLinea,
 0 AS TO_029_OfertaConsultora,
 0 AS TO_033_PromocionPropia,
 0 AS TO_035_FechasEspeciales,
@@ -448,7 +448,7 @@ FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana
 WHERE B.CodTipoOferta IN ('018')
 
 UPDATE #BASE_3
-SET TO_019_RestoLínea = 1
+SET TO_019_RestoLinea = 1
 FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
 WHERE B.CodTipoOferta IN ('019')
 
