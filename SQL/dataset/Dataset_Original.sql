@@ -14,9 +14,9 @@ SET @DesCategoria =
 --'MAQUILLAJE'
 
 SET @AnioCampanaIni = '201401'
-SET @AnioCampanaFin = '201713'
-SET @AnioCampanaIniFuturo = '201714'
-SET @AnioCampanaFinFuturo = '201718'
+SET @AnioCampanaFin = '201714'
+SET @AnioCampanaIniFuturo = '201715'
+SET @AnioCampanaFinFuturo = '201806'
 
 /*Los códigos de país de SICC de El Salvador y Guatemala no tienen un formato bonito*/
 SELECT @CodPais = CASE WHEN CodPais = 'S2' THEN 'SV' WHEN CodPais = 'G2' THEN 'GT' ELSE CodPais END
@@ -510,8 +510,8 @@ WHERE B.CodTipoOferta IN ('123')
 UPDATE #BASE_3
 SET FlagTacticaMacro = 1
 FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
-WHERE B.CodTipoOferta IN ('001', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '015', 
-'025', '029', '033', '035', '044', '048', '049', '060', '064', '106', '108', '114', '115', '116', '117', '123') 
+WHERE B.CodTipoOferta IN ('001', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '025',
+ '029', '033', '035', '044', '048', '049', '060', '064', '106', '108', '114', '115', '116', '117', '123') 
 
 UPDATE #BASE_3
 SET FlagTacticaDetallada = 1
