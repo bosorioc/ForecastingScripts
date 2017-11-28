@@ -1,3 +1,4 @@
+USE DATAMARTCOMMEXICO
 DECLARE @AnioCampanaIni CHAR(6)
 DECLARE @AnioCampanaFin CHAR(6)
 DECLARE @AnioCampanaIniFuturo CHAR(6)
@@ -8,15 +9,15 @@ DECLARE @DesCategoria VARCHAR(20)
 
 SET @DesCategoria = 
 'CUIDADO PERSONAL'
-----'TRATAMIENTO FACIAL'
-----'FRAGANCIAS'
-----'TRATAMIENTO CORPORAL'
+--'TRATAMIENTO FACIAL'
+--'FRAGANCIAS'
+--'TRATAMIENTO CORPORAL'
 --'MAQUILLAJE'
 
 SET @AnioCampanaIni = '201401'
-SET @AnioCampanaFin = '201714'
-SET @AnioCampanaIniFuturo = '201715'
-SET @AnioCampanaFinFuturo = '201806'
+SET @AnioCampanaFin = '201716'
+SET @AnioCampanaIniFuturo = '201717'
+SET @AnioCampanaFinFuturo = '201718'
 
 /*Los códigos de país de SICC de El Salvador y Guatemala no tienen un formato bonito*/
 SELECT @CodPais = CASE WHEN CodPais = 'S2' THEN 'SV' WHEN CodPais = 'G2' THEN 'GT' ELSE CodPais END
@@ -59,7 +60,7 @@ AND DESCATEGORIA = @DesCategoria
 
 --Precio Normal
 --Considerar solo los productos CUC que tienen estimados
-SELECT A.AnioCampana, CodCUC, SUM(EstUUVendidas) AS NroEstimados,max(PrecioOfertaDol) as PrecioOfertaDol,  MAX(Case when @codpais = 'BO' then PrecioNormalDol else PrecioNormalMN end) AS PRECIONORMALMN  
+SELECT A.AnioCampana, CodCUC, SUM(EstUUVendidas) AS NroEstimados, max(PrecioOfertaDol) as PrecioOfertaDol,  MAX(Case when @codpais = 'BO' then PrecioNormalDol else PrecioNormalMN end) AS PRECIONORMALMN  
 INTO #TMP_Estimados
 FROM FVTAPROCAMMES A INNER JOIN DPRODUCTO B ON A.PKProducto = B.PKProducto
 WHERE A.AnioCampana = A.AnioCampanaRef
@@ -84,6 +85,7 @@ FROM #BASE A INNER JOIN #TMP_estimados B ON A.AnioCampana = B.AnioCampana AND A.
 WHERE NroEstimados = 0 
 
 DELETE FROM #BASE WHERE FlagNoConsiderar = 1
+
 
 /*Se actualiza el precio normal de cada CUC*/
 UPDATE #BASE
@@ -120,7 +122,7 @@ La táctica debe estar diagramada solo en la revista o en los catálogos
 SELECT AnioCampana, C.CODCUC, A.PKTipoOferta, B.CodTipoOferta, DesUbicacionCatalogo, DesLadoPag, DesTipoCatalogo,
 ISNULL(CONVERT(FLOAT,RIGHT(RTRIM(REPLACE(REPLACE(DesExposicion,'SIN EXPOSICION',''), '%', '')), 4)),0)/100 * NroPaginas AS Exposicion, 
 NroPaginas, MAX(FotoProducto) AS FotoProducto, MAX(FotoModelo) AS FotoModelo, MAX(FlagDiscover) AS FlagDiscover, PaginaCatalogo,
-MIN(PrecioOferta) AS PrecioOferta, 1 AS Registros, 1 as Eliminar 
+round(MIN(PrecioOferta),2,1) AS PrecioOferta, 1 AS Registros, 1 as Eliminar 
 FROM DMATRIZCAMPANA A INNER JOIN DTIPOOFERTA B ON A.PKTIPOOFERTA = B.PKTIPOOFERTA
 INNER JOIN DPRODUCTO C ON A.PKPRODUCTO = C.PKPRODUCTO
 WHERE AnioCampana BETWEEN @AnioCampanaIniFuturo AND @AnioCampanaFinFuturo
@@ -151,6 +153,7 @@ DELETE #TMP_DMATRIZCAMPANA WHERE PrecioOferta = 0
 DELETE FROM #TMP_DMATRIZCAMPANA
 WHERE DesTipoCatalogo IN ('REVISTA BELCORP') AND (ISNULL(PaginaCatalogo,0) = 0 OR  ISNULL(PaginaCatalogo,0)>=100)
 
+
 /*Agrupamos por producto - tipo de oferta*/
 SELECT AnioCampana, CodCUC, PKTipoOferta, MIN(PrecioOferta) AS PrecioOferta, 
 SUM(ISNULL(Exposicion,0)) AS Exposicion, SUM(ISNULL(NroPaginas,0)) AS NroPaginas 
@@ -167,24 +170,32 @@ INTO #BASE_1
 FROM #BASE 
 GROUP BY ANIOCAMPANA, CODCUC, DesMarca, CodCategoria, DesCategoria, CodTipoOferta, PKTipoOferta, FlagCatalogo, FlagRevista, FlagReal
 
+UPDATE #TMP_DMATRIZCAMPANA1
+SET PrecioOferta = 0 
+WHERE @CodPais = 'BO'
+
+UPDATE #TMP_DMATRIZCAMPANA1
+SET PrecioOferta = round(B.PrecioOfertaDol,2,1)
+FROM #TMP_DMATRIZCAMPANA1 A INNER JOIN #TMP_DOLAR B
+ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CODCUC AND A.PKTipoOferta = B.PKTipoOferta 
+WHERE @codpais = 'BO'
+
 /*Por cada CUC - TO se le asigna el precio de oferta, exposición total, número de páginas y descuento*/
 UPDATE	#BASE_1
-SET	PrecioOferta = B.PrecioOferta,
+SET	PrecioOferta = round(B.PrecioOferta,2,1),
 	Exposicion = B.Exposicion,
 	ExposicionOriginal = B.Exposicion,
 	NroPaginas = B.NroPaginas,
 	NroPaginasOriginal = B.NroPaginas,
-	Descuento = CASE WHEN CONVERT(FLOAT, A.PrecioNormalMN) = 0 THEN 0 ELSE (1 - (CONVERT(FLOAT, B.PrecioOferta) /CONVERT(FLOAT, A.PrecioNormalMN))) END,
+	Descuento = CASE WHEN CONVERT(FLOAT, A.PrecioNormalMN) = 0 THEN 0 ELSE (1 - (CONVERT(FLOAT,round(B.PrecioOferta,2,1))) /(round(CONVERT(FLOAT, A.PrecioNormalMN),2,1))) END,
 	FlagDiagramado = 1
 FROM #BASE_1 A INNER JOIN #TMP_DMATRIZCAMPANA1 B 
 ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC AND A.PKTipoOferta = B.PKTipoOferta 
 
+/*Se aplica 0 a los registros que tengan descuento negativo*/
 UPDATE #BASE_1
-SET PrecioOferta = B.PrecioOfertaDol
-FROM #BASE_1 A INNER JOIN #TMP_DOLAR B
-ON A.AnioCampana = B.AnioCampana AND A.CODCUC = B.CODCUC AND A.PKTipoOferta = B.PKTipoOferta 
-WHERE @codpais = 'BO'
-
+SET Descuento = 0
+WHERE Descuento <0 
 /*Si no fue diagramado no lo considero*/
 /*Si el CUC-TO no fue diagramado lo elimino, es una reacción*/
 DELETE FROM #BASE_1 WHERE FlagDiagramado = 0
@@ -209,18 +220,18 @@ INTO #Apoyados1
 FROM #BASE_1 A 
 INNER JOIN #Apoyados B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CODCUC = B.CodCUC
 
-SELECT A.ANIOCAMPANA, A.CODCUC, MIN(A.PrecioOferta) AS PrecioOfertaTotal, MIN(B.PrecioOferta) AS PrecioOfertaSet, 
+SELECT A.ANIOCAMPANA, A.CODCUC, MIN(A.PrecioOferta) AS PrecioOfertaTotal, round(MIN(B.PrecioOferta),2,1) AS PrecioOfertaSet, 
 CASE WHEN MIN(A.PrecioOferta) = MIN(B.PrecioOferta) THEN 1 ELSE 0 END AS FlagPromedio 
 INTO #TMP_PromedioSets FROM #BASE_1 A 
 INNER JOIN #TMP_PrecioSets B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CODCUC = B.CodCUC
 GROUP BY A.ANIOCAMPANA, A.CODCUC
 UNION 
-SELECT A.ANIOCAMPANA, A.CODCUC, MIN(A.PrecioOferta) AS PrecioOfertaTotal, MIN(B.PrecioOferta) AS PrecioOfertaSet, 
+SELECT A.ANIOCAMPANA, A.CODCUC, MIN(A.PrecioOferta) AS PrecioOfertaTotal, round(MIN(B.PrecioOferta),2,1) AS PrecioOfertaSet, 
 CASE WHEN MIN(A.PrecioOferta) = MIN(B.PrecioOferta) THEN 1 ELSE 0 END AS FlagPromedio 
 FROM #BASE_1 A 
 INNER JOIN #Apoyados1 B ON A.ANIOCAMPANA = B.ANIOCAMPANA AND A.CODCUC = B.CodCUC
 GROUP BY A.ANIOCAMPANA, A.CODCUC
-
+---------------------select * from #BASE_1
 SELECT A.AnioCampana, A.CodCUC, MIN(A.PrecioOferta) AS PrecioOfertaMIN, CONVERT(FLOAT,0) AS PrecioOfertaSet
 INTO #TMP_MIN
 FROM #BASE_1 A INNER JOIN #TMP_PromedioSets B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC 
@@ -293,7 +304,7 @@ COUNT(DISTINCT PkTipoOferta) AS NroTipoOfertas,
 SUM(FlagCatalogo) AS NroTipoOfertasCatalogo,
 SUM(FlagRevista) AS NroTipoOfertasRevista,
 SUM(RealUUVendidas + RealUUFaltantes) AS RealUUDemandadas, 
-CONVERT(FLOAT,SUM(RealUUVendidas + RealUUFaltantes)) /CONVERT(FLOAT,B.RealNroPedidos) AS PUP, 
+round(CONVERT(FLOAT,SUM(RealUUVendidas + RealUUFaltantes)) /CONVERT(FLOAT,B.RealNroPedidos),10,1) AS PUP, 
 MIN(Exposicion) AS ExposicionMin,
 SQRT(MIN(Exposicion)) AS ExposicionMinRaizCuadrada,
 MAX(Exposicion) AS ExposicionMax, 
@@ -534,7 +545,7 @@ WHERE B.CodTipoOferta IN ('001', '003', '004', '005', '006', '009', '010', '011'
 UPDATE #BASE_3
 SET FlagTacticaDetallada = 1
 FROM #BASE_3 A INNER JOIN #TMP_DMATRIZCAMPANA B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
-WHERE B.CodTipoOferta IN ('007', '008', '016', '017', '018', '019', '036', '038', '039', '043', '047') 
+WHERE B.CodTipoOferta IN ('007', '008','015', '016', '017', '018', '019', '036', '038', '039', '043', '047') 
 
 -- -- --DROP TABLE #BASE_DESCUENTO
 SELECT ANIOCAMPANA, CODCUC, FlagCatalogo, FlagRevista, MAX(Descuento) AS DescuentoMaximo INTO #BASE_DESCUENTO FROM #BASE_1
@@ -576,4 +587,4 @@ SET N_Records_SKU = B.N_Records_SKU
 FROM #BASE_3 A INNER JOIN #TMP_CAMPANACUC1 B ON A.AnioCampana = B.AnioCampana AND A.CodCUC = B.CodCUC
 /*Versión original - Fin*/
 
---INSERT INTO BDDM01.DATAMARTANALITICO.DBO.TMP_Forecasting
+
